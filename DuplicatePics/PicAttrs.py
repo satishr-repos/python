@@ -2,6 +2,13 @@ import os
 from PIL import Image
 from PIL.ExifTags import TAGS
 
+def is_image(img):
+
+    if (img[-4:] == '.jpg') or (img[-4:] == '.png') or (img[-4:] == '.mp4') or (img[-4:] == '.mov'):
+        return True
+    else:
+        return False
+
 def get_image_attr(img):
     
     # read the image data using PIL
@@ -34,7 +41,7 @@ loc = input()
 
 for img in os.listdir(loc):
 
-    if (img[-4:] != '.jpg') and (img[-4:] != '.png'):
+    if (is_image(img) != True):
         continue
 
     imgpath = loc+'\\'+img
