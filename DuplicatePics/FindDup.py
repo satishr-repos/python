@@ -1,4 +1,5 @@
 import os
+import shutil
 import hashlib
 
 class Duplicates:
@@ -39,6 +40,18 @@ def get_md5(myfile):
 
 print ('Give directory location of image: ', end ="")
 base_path = input()
+
+if os.path.isdir(base_path) == False:
+    print("Directory not valid")
+    exit()
+
+print ('Give destination path for duplicates: ', end ="")
+dest_path = input()
+
+if os.path.isdir(dest_path) == False:
+    print("Destination path not valid")
+    exit()
+
 orig_files = dict()
 dup_files = []
 
@@ -71,3 +84,4 @@ for k,v in orig_files.items():
 print('\nDuplicate Files:')
 for dup in dup_files:
     print(dup.duplicate+" ==> "+dup.original)
+    #shutil.move(dup.duplicate, dest_path)
