@@ -1,30 +1,100 @@
 import os
+import time
 import shutil
 import hashlib
+from PIL import Image
+from PIL.ExifTags import TAGS
 
-class Duplicates:
+VIDEO = ('.m1v', '.mpeg', '.mov', '.qt', '.mpa', '.mpg', '.mpe', '.avi', '.movie', '.mp4', '.3gp')
+IMAGE = ('.ras', '.xwd', '.bmp', '.jpe', '.jpg', '.jpeg', '.xpm', '.ief', '.pbm', '.tif', '.gif', '.ppm', '.xbm', '.tiff', '.rgb', '.pgm', '.png', '.pnm')
 
-    def __init__(self, dup, org, hash):
-        self.duplicate = dup
-        self.original = org
-        self.hash = hash
+class ImageInfo:
 
-def is_image(img):
+    def __init__(self, orig):
+        self.origf= orig
 
-    if ( img[-4:] == '.jpg' or 
-            img[-5:] == '.jpeg' or 
-            img[-4:] == '.3gp' or 
-            img[-4:] == '.avi' or 
-            img[-4:] == '.png' or 
-            img[-4:] == '.mp4' or 
-            img[-4:] == '.mov' ):
-        return True
-    else:
-        return False
+    def GetImageTags(self):
+
+        try:
+            # read the image data using PIL
+            image = Image.open(self.origf)
+
+            # extract EXIF data
+            exifdata = image.getexif()
+
+            """
+            The problem with exifdata variable now is that the field names are just IDs, not a 
+            human readable field name, thats why we gonna need the TAGS dictionary from PIL.ExifTags 
+            module which maps each tag ID into a human readable text 
+            """
+
+            print('\n'+self.origf+'\n')
+
+            # iterating over all EXIF data fields
+            for tag_id in exifdata:
+                # get the tag name, instead of human unreadable tag id
+                tag = TAGS.get(tag_id, tag_id)
+                data = exifdata.get(tag_id)
+                # decode bytes 
+                if isinstance(data, bytes):
+                    data = data.decode(encoding='UTF-8',errors='strict')
+
+                print(f"{tag_id}:{tag:25}: {data}")
+        except:
+            pass
+
+        return
+
+    def CreateNewName(self):
+        token = ':'
+        c = ''
+        fstr = self.GetImageDate()
+        fstr = fstr.replace(':', '')
+        fstr = fstr.replace(' ', '_')
+        fname = os.path.basename(self.origf)
+        split = os.path.splitext(fname)
+        if(fname.lower().endswith(IMAGE)):
+            new = 'IMG_' + fstr + split[1]
+        elif(fname.lower().endswith(VIDEO)):
+            new = 'MOV_' + fstr + split[1]
+        else:
+            new = fname
+
+        return new
+
+    def GetFileDate(self):
+        t = os.path.getmtime(self.origf)
+        return time.strftime("%Y:%m:%d %H:%M:%S", time.localtime(t))
+
+    def GetImageDate(self):
+       
+        try:
+            # read the image data using PIL
+            image = Image.open(self.origf)
+            
+            # extract EXIF data
+            exifdata = image.getexif()
+            cdate = exifdata.get(36867)
+            if(str(cdate) == 'None'):
+                cdate = self.GetFileDate()
+        except:
+            cdate = self.GetFileDate()
+
+        return cdate
+
+def replace_chars_in_str(old, new, mystr): 
+  
+    # iterating to check vowels in string 
+    for ele in old: 
+  
+        # replacing vowel with the specified character 
+        mystr = mystr.replace(ele, new) 
+  
+    return mystr 
 
 def get_md5(myfile):
    
-    CHUNK_SIZE = 16 * 1024
+    CHUNK_SIZE = 64 * 1024
 
     with open(myfile, "rb") as f:
         file_hash = hashlib.md5()
@@ -45,43 +115,52 @@ if os.path.isdir(base_path) == False:
     print("Directory not valid")
     exit()
 
+"""
 print ('Give destination path for duplicates: ', end ="")
 dest_path = input()
 
 if os.path.isdir(dest_path) == False:
     print("Destination path not valid")
     exit()
+"""
 
-orig_files = dict()
-dup_files = []
-
+"""
 file_names = os.listdir(base_path)
 files = [os.path.join(base_path,i) for i in file_names]
 files.sort(key=os.path.getctime, reverse = False)
+"""
 
-for img in files:
+image_db = dict()
 
-    if (is_image(img) != True):
-        continue
+# Using os.walk() 
+for dirpath, dirs, files in os.walk(base_path): 
+  for filename in files: 
+    print("Processing "+filename+20*' ', end="\r")
+    if filename.lower().endswith(IMAGE) or filename.lower().endswith(VIDEO): 
+        fname = os.path.join(dirpath,filename)
+        hash = get_md5(fname)
+        image_db.setdefault(hash,[]).append(fname)
 
-    #print(imgpath, end =" ")
+#clear screen
+print(30*' ')
 
-    hash = get_md5(img)
+file_list = []
 
-    if hash not in orig_files:
-        orig_files[hash] = img
-    else:
-        dup_files.append(Duplicates(img, orig_files[hash], hash))
+for k,v in image_db.items():
+    #print("%s repeates %d times" %(v[0], len(v)))
+    #print(os.path.basename(v[0]), len(v))
+    v.sort(key=os.path.getctime, reverse = False)
+    im = ImageInfo(v[0])
+    file_list.append(im)
+    #print(im.origf+'  '+im.GetImageDate())
+    print(im.origf+'  '+im.CreateNewName())
+    #im.GetImageTags()
 
-    #print(get_md5(imgpath))
+print("Original Files Count: %d" %(len(file_list)))
 
-    #break
-
-print('\nOriginal Files:')
-for k,v in orig_files.items():
-    print(v)
-
+"""
 print('\nDuplicate Files:')
 for dup in dup_files:
     print(dup.duplicate+" ==> "+dup.original)
     #shutil.move(dup.duplicate, dest_path)
+"""
