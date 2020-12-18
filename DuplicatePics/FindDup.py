@@ -112,23 +112,26 @@ def get_md5(myfile):
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('-i', '--ipath', action='store', type=str, required=True, help="folder path for pictures")
+parser.add_argument('-i', '--ipath', action='append', type=str, required=True, help="folder path for pictures")
 parser.add_argument('-o', '--opath', action='store', type=str, help="folder path where original picutures should be moved")
 
 args = parser.parse_args()
 
-base_path = str(args.ipath)
+base_path = args.ipath
 dest_path = str(args.opath) if str(args.opath) != 'None' else ""
 
-print(base_path, dest_path)
+for p in base_path:
+    if(os.path.isdir(p) == False):
+        print("Source path %s not valid"%(p))
+        exit()
 
-if os.path.isdir(base_path) == False:
-    print("Source path not valid")
-    exit()
-
-if(dest_path != '' and os.path.isdir(dest_path) == False):
+if(dest_path == ''):
+    dest_path = os.environ.get("TEMP")
+elif (os.path.isdir(dest_path) == False):
     print("Destination path not valid")
     exit()
+
+print(base_path, dest_path)
 
 """
 file_names = os.listdir(base_path)
@@ -143,43 +146,53 @@ copied = 0
 size = 0
 
 # Using os.walk() 
-for dirpath, dirs, files in os.walk(base_path): 
-  for filename in files: 
-    print("Processing "+filename+20*' ', end="\r")
-    if filename.lower().endswith(IMAGE) or filename.lower().endswith(VIDEO): 
-        total += 1
-        fname = os.path.join(dirpath,filename)
-        hash = get_md5(fname)
-        image_db.setdefault(hash,[]).append(fname)
+for p in base_path:
+    for dirpath, dirs, files in os.walk(p): 
+      for filename in files: 
+        print("Processing "+filename+20*' ', end="\r")
+        if filename.lower().endswith(IMAGE) or filename.lower().endswith(VIDEO): 
+            total += 1
+            fname = os.path.join(dirpath,filename)
+            hash = get_md5(fname)
+            image_db.setdefault(hash,[]).append(fname)
 
 #clear screen
 print(30*' ')
 
-file_list = []
+fileNames = dict()
 
 try:
-    logName = os.path.join(os.environ.get("TEMP"), 'activity.log')
+    logName = os.path.join(dest_path, 'activity.log')
     log = open(logName, 'a')
     log.write("Activity Started at {0}\n".format(time.ctime()));
 
     for k,v in image_db.items():
-        #print("%s repeates %d times" %(v[0], len(v)))
-        #print(os.path.basename(v[0]), len(v))
         v.sort(key=os.path.getctime, reverse = False)
         im = ImageInfo(v[0])
-        file_list.append(im)
         #print(im.origf+'  '+im.GetImageDate())
         copied += 1
         size += os.path.getsize(im.origf);
-        
-        newName = os.path.join(dest_path, im.CreateNewName())
-        p = "{0:<70} {1} {2:d}".format(im.origf, newName, os.path.getsize(im.origf))
+       
+        newName = im.CreateNewName()
 
+        #if file name already exits add a count to it
+        # eg. img_DDDD_TTTT_1.jpg
+        count = fileNames.setdefault(newName, 0)
+        fileNames[newName] += 1
+
+        if(count != 0):
+            split = os.path.splitext(newName)
+            newName = "{0}_{1}{2}".format(split[0], str(count), split[1])
+
+        newName = os.path.join(dest_path, newName)
+        
+        p = "{0:<70} {1} {2:d}".format(im.origf, newName, os.path.getsize(im.origf))
+        """        
         if not os.path.isfile(newName):
             shutil.copy2(im.origf, newName)
         else:
             p = "{0:<70} {1} NOT COPIED".format(im.origf, newName)
-
+        """
         print(p)
         log.write(p+'\n')
 
