@@ -2,6 +2,8 @@ import os
 import time
 import shutil
 import hashlib
+import argparse
+
 from PIL import Image
 from PIL.ExifTags import TAGS
 
@@ -54,9 +56,9 @@ class ImageInfo:
         fname = os.path.basename(self.origf)
         split = os.path.splitext(fname)
         if(fname.lower().endswith(IMAGE)):
-            new = 'IMG_' + fstr + split[1]
+            new = 'img_' + fstr + split[1].lower()
         elif(fname.lower().endswith(VIDEO)):
-            new = 'MOV_' + fstr + split[1]
+            new = 'mov_' + fstr + split[1].lower()
         else:
             new = fname
 
@@ -94,7 +96,7 @@ def replace_chars_in_str(old, new, mystr):
 
 def get_md5(myfile):
    
-    CHUNK_SIZE = 64 * 1024
+    CHUNK_SIZE = 1024 * 1024
 
     with open(myfile, "rb") as f:
         file_hash = hashlib.md5()
@@ -108,21 +110,25 @@ def get_md5(myfile):
     
     return file_hash.hexdigest()
 
-print ('Give directory location of image: ', end ="")
-base_path = input()
+
+parser = argparse.ArgumentParser()
+parser.add_argument('-i', '--ipath', action='store', type=str, required=True, help="folder path for pictures")
+parser.add_argument('-o', '--opath', action='store', type=str, help="folder path where original picutures should be moved")
+
+args = parser.parse_args()
+
+base_path = str(args.ipath)
+dest_path = str(args.opath) if str(args.opath) != 'None' else ""
+
+print(base_path, dest_path)
 
 if os.path.isdir(base_path) == False:
-    print("Directory not valid")
+    print("Source path not valid")
     exit()
 
-"""
-print ('Give destination path for duplicates: ', end ="")
-dest_path = input()
-
-if os.path.isdir(dest_path) == False:
+if(dest_path != '' and os.path.isdir(dest_path) == False):
     print("Destination path not valid")
     exit()
-"""
 
 """
 file_names = os.listdir(base_path)
@@ -132,11 +138,16 @@ files.sort(key=os.path.getctime, reverse = False)
 
 image_db = dict()
 
+total = 0
+copied = 0
+size = 0
+
 # Using os.walk() 
 for dirpath, dirs, files in os.walk(base_path): 
   for filename in files: 
     print("Processing "+filename+20*' ', end="\r")
     if filename.lower().endswith(IMAGE) or filename.lower().endswith(VIDEO): 
+        total += 1
         fname = os.path.join(dirpath,filename)
         hash = get_md5(fname)
         image_db.setdefault(hash,[]).append(fname)
@@ -146,21 +157,41 @@ print(30*' ')
 
 file_list = []
 
-for k,v in image_db.items():
-    #print("%s repeates %d times" %(v[0], len(v)))
-    #print(os.path.basename(v[0]), len(v))
-    v.sort(key=os.path.getctime, reverse = False)
-    im = ImageInfo(v[0])
-    file_list.append(im)
-    #print(im.origf+'  '+im.GetImageDate())
-    print(im.origf+'  '+im.CreateNewName())
-    #im.GetImageTags()
+try:
+    logName = os.path.join(os.environ.get("TEMP"), 'activity.log')
+    log = open(logName, 'a')
+    log.write("Activity Started at {0}\n".format(time.ctime()));
 
-print("Original Files Count: %d" %(len(file_list)))
+    for k,v in image_db.items():
+        #print("%s repeates %d times" %(v[0], len(v)))
+        #print(os.path.basename(v[0]), len(v))
+        v.sort(key=os.path.getctime, reverse = False)
+        im = ImageInfo(v[0])
+        file_list.append(im)
+        #print(im.origf+'  '+im.GetImageDate())
+        copied += 1
+        size += os.path.getsize(im.origf);
+        
+        newName = os.path.join(dest_path, im.CreateNewName())
+        p = "{0:<70} {1} {2:d}".format(im.origf, newName, os.path.getsize(im.origf))
 
-"""
-print('\nDuplicate Files:')
-for dup in dup_files:
-    print(dup.duplicate+" ==> "+dup.original)
-    #shutil.move(dup.duplicate, dest_path)
-"""
+        if not os.path.isfile(newName):
+            shutil.copy2(im.origf, newName)
+        else:
+            p = "{0:<70} {1} NOT COPIED".format(im.origf, newName)
+
+        print(p)
+        log.write(p+'\n')
+
+
+        #im.GetImageTags()
+
+    p = "\nProcessed:{0:d} Copied:{1:d} Size:{2:d}\n".format(total, copied, size)
+    log.write(p)
+    
+    print(p)
+# If source and destination are same 
+except shutil.SameFileError: 
+    print("Source {0} and Destination {1} are same".format(im.origf, newName)) 
+finally:
+    log.close()
