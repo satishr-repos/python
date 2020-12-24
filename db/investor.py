@@ -1,5 +1,6 @@
 import os
 import csv
+import argparse
 from datetime import datetime 
 import sqlite3 as sql
 from sqlite3 import Error
@@ -49,12 +50,13 @@ class transaction:
 		self.rec['rate'] = float(rate)
 		self.rec['brokerage'] = float(brokerage)
 		self.rec['unitprice'] = float(unitprice)
-		self.rec['totalprice'] = float(totalprice)
+		self.rec['totalprice'] = abs(float(totalprice))
 
 	def is_fy(self, fyyear):
-		if(self.rec['date'].year == int(fyyear) and self.rec['date'].month >= 4): 
+		if(fyyear == 'all'):
 			return True
-		elif(self.rec['date'].year == (int(fyyear)+1) and self.rec['date'].month <= 3):	
+		elif(self.rec['date'].year == int(fyyear) and self.rec['date'].month >= 4) or\
+			(self.rec['date'].year == (int(fyyear)+1) and self.rec['date'].month <= 3):	
 			return True
 		else:
 			return False
@@ -71,7 +73,7 @@ class transactions:
 		self.all_tx.append(T)	
 		self.company_tx.setdefault(T.rec['company'], []).append(T)
 
-	def get_fy_data(self, fy, fields=['date','company','quantity','type','unitprice', 'totalprice']):
+	def get_fy_data(self, fy, fields):
 		recs = []
 		for t in self.all_tx:
 			r = [t.rec[f] for f in fields if t.is_fy(fy)]
@@ -79,7 +81,7 @@ class transactions:
 				recs.append(r)
 		return recs
 
-	def get_fifo_data(self, fy, fields=['date','company','quantity','type','unitprice', 'totalprice']):
+	def get_cw_data(self, fy, fields):
 		recs = []
 		for c,lst in self.company_tx.items():
 			for t in lst:
@@ -98,12 +100,12 @@ def exporttocsv(filename, header, data):
 		cswriter.writerow(header)
 		cswriter.writerows(data)
 
-def main(dbFile, csvFile):
+def main(dbFile, csvFile, fy, cw):
 
 	db = sqldb(dbFile)	
 	names = db.get_table_names() 
 	cols,rows = db.get_records(names[0])
-	print(cols)
+	#print(cols)
 	
 	tx = transactions()
 	for row in rows:
@@ -116,16 +118,32 @@ def main(dbFile, csvFile):
 	#fields = ['date', 'company', 'quantity', 'type', 'totalprice']
 	#fydata = tx.get_fy_data('2019', fields)
 	#print(fydata)
-	
-	fifodata = tx.get_fifo_data('2019', fields)
-	print(fifodata)
 
-	fields += fields
-	exporttocsv(csvPath, fields, fifodata)
+	if cw == True:
+		data = tx.get_cw_data(fy, fields)
+		fields += fields
+	else:
+		data = tx.get_fy_data(fy, fields)
+
+	print(data)
+
+	exporttocsv(csvPath, fields, data)
 
 	#print("{0}  {1:<40s} {2:6d} {3:10.4f}  {4:.4f}".format(t.trdate, t.company, t.quantity, t.unitprice, t.totalprice))
 
 if __name__ == '__main__':
-	dbPath = "./test.db"
-	csvPath = "./test.csv"
-	main(dbPath, csvPath)
+
+	parser = argparse.ArgumentParser()
+	parser.add_argument('-i', '--dbpath', action='store', type=str, help="Database file path")
+	parser.add_argument('-o', '--csvpath', action='store', type=str, help=".csv file to output the info")
+	parser.add_argument('-y', '--fy', action='store', type=str, help="get data pertaining to a particular FY")
+	parser.add_argument('-c', '--companywise', action='store', type=str, help="get company wise transactions")
+	args = parser.parse_args()
+
+	dbPath = "./test.db" if args.dbpath == None else args.dbpath
+	csvPath = "./out.csv" if args.csvpath == None else args.csvpath
+	fy = 'all' if args.fy == None else args.fy
+	cw = False if args.companywise == None else True
+
+	main(dbPath, csvPath, fy, cw)
+
