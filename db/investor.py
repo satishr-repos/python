@@ -83,15 +83,19 @@ class transactions:
 
 	def get_cw_data(self, fy, fields):
 		recs = []
+		empty = [''] * 6
 		for c,lst in self.company_tx.items():
 			for t in lst:
-				b = [''] * 6
-				s = [''] * 6
+				b = empty.copy()
+				s = empty.copy()
 				if t.is_buy():
-					b = [t.rec[f] for f in fields]
+					b = [t.rec[f] for f in fields if t.is_fy(fy)]
 				else:
-					s = [t.rec[f] for f in fields]
-				recs.append(b+s)
+					s = [t.rec[f] for f in fields if t.is_fy(fy)]
+				
+				r = b + s
+				if r != empty:
+					recs.append(r)
 		return recs
 
 def exporttocsv(filename, header, data):
@@ -136,14 +140,14 @@ if __name__ == '__main__':
 	parser = argparse.ArgumentParser()
 	parser.add_argument('-i', '--dbpath', action='store', type=str, help="Database file path")
 	parser.add_argument('-o', '--csvpath', action='store', type=str, help=".csv file to output the info")
-	parser.add_argument('-y', '--fy', action='store', type=str, help="get data pertaining to a particular FY")
-	parser.add_argument('-c', '--companywise', action='store', type=str, help="get company wise transactions")
+	parser.add_argument('-y', '--fy', action='store', type=str, default='all',  help="get data pertaining to a particular FY")
+	parser.add_argument('-c', '--companywise', action='store_true', help="get company wise transactions")
 	args = parser.parse_args()
 
 	dbPath = "./test.db" if args.dbpath == None else args.dbpath
 	csvPath = "./out.csv" if args.csvpath == None else args.csvpath
-	fy = 'all' if args.fy == None else args.fy
-	cw = False if args.companywise == None else True
+	fy = args.fy
+	cw = args.companywise
 
 	main(dbPath, csvPath, fy, cw)
 
