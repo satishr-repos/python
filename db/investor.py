@@ -73,11 +73,13 @@ class transactions:
 			s = [self.all_tx[i].rec[f] for f in fields if self.all_tx[i].is_fy(fy)]
 			if(len(s) == 0):
 				continue
-			r = s + empty
-			recs.append(r)
+			
 			for j in lst:
 				b = [self.all_tx[j].rec[f] for f in fields]
-				r = empty + b
+				if(lst[0] == j):
+					r = s + b
+				else:
+					r = empty + b
 				recs.append(r)
 		return recs
 
@@ -86,7 +88,6 @@ class transactions:
 		for c,lst in self.company_tx.items():
 			buys = [self.all_tx.index(t) for t in lst if t.is_buy()]
 			sells = [self.all_tx.index(t) for t in lst if not t.is_buy()]
-			print(c, sells, buys)
 			for i in sells:
 				fifos.setdefault(i, [])
 				sellqty = abs(self.all_tx[i].rec['quantity'])
@@ -101,10 +102,14 @@ class transactions:
 						buyqty = self.all_tx[j].rec['quantity']	
 						fifos[i].append(j)
 						if(buyqty > sellqty):
+							new = copy.deepcopy(self.all_tx[j])
+							unitprice = new.rec['totalprice'] / new.rec['quantity']
 							self.all_tx[j].rec['quantity'] = sellqty
 							self.all_tx[j].rec['company'] = c + '(PARTIAL)'							
-							new = copy.deepcopy(self.all_tx[j])
+							self.all_tx[j].rec['totalprice'] = round(unitprice * sellqty,4)
 							new.rec['quantity'] = buyqty - sellqty
+							new.rec['company'] = c + '(PARTIAL)'
+							new.rec['totalprice'] = round(unitprice * new.rec['quantity'],4)
 							self.all_tx.append(new)
 							buys.insert(0, self.all_tx.index(new))
 						sellqty -= buyqty
@@ -143,6 +148,7 @@ def main(dbFile, csvFile, fy, cw, fifo):
 		fields += fields
 	elif fifo == True:
 		data = tx.get_fifo_data(fy, fields)
+		fields += fields
 	else:
 		data = tx.get_fy_data(fy, fields)
 
