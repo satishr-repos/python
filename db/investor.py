@@ -1,41 +1,9 @@
 import os
 import csv
+import copy
 import argparse
+import sqlwrap
 from datetime import datetime 
-import sqlite3 as sql
-from sqlite3 import Error
-
-class sqldb:
-
-	def __init__(self, dbPath):
-		self.conn = None
-
-		try:
-			if(not os.path.isfile(dbPath)):
-				raise ValueError
-
-			self.dbPath = dbPath
-			self.conn = sql.connect(dbPath)
-		except Error as e:
-			print(e)
-
-	def __del__(self):
-		if self.conn:
-			self.conn.close()
-
-	def get_table_names(self):
-		cur = self.conn.cursor()
-		cur.execute("SELECT name FROM sqlite_master WHERE type='table';")
-		return cur.fetchall()
-
-	def get_records(self, tableName):
-		cur = self.conn.cursor()
-		cur.execute("SELECT * FROM %s;" %(tableName))
-
-		cols = [col[0] for col in cur.description]
-		rows = cur.fetchall()
-	
-		return cols,rows;
 
 class transaction:
 	def __init__(self, pan, strategy, name, company, trdate, quantity, rate, brokerage, unitprice, totalprice):
@@ -60,7 +28,7 @@ class transaction:
 			return True
 		else:
 			return False
-
+	
 	def is_buy(self):
 		return True if self.rec['type'] == 'BUY' else False
 
@@ -98,15 +66,62 @@ class transactions:
 					recs.append(r)
 		return recs
 
+	def __fifo_recs(self, fifos, fy, fields):
+		recs = []
+		empty = [''] * 6
+		for i,lst in fifos.items():
+			s = [self.all_tx[i].rec[f] for f in fields if self.all_tx[i].is_fy(fy)]
+			if(len(s) == 0):
+				continue
+			r = s + empty
+			recs.append(r)
+			for j in lst:
+				b = [self.all_tx[j].rec[f] for f in fields]
+				r = empty + b
+				recs.append(r)
+		return recs
+
+	def get_fifo_data(self, fy, fields):
+		fifos = dict()
+		for c,lst in self.company_tx.items():
+			buys = [self.all_tx.index(t) for t in lst if t.is_buy()]
+			sells = [self.all_tx.index(t) for t in lst if not t.is_buy()]
+			print(c, sells, buys)
+			for i in sells:
+				fifos.setdefault(i, [])
+				sellqty = abs(self.all_tx[i].rec['quantity'])
+				while(sellqty > 0):
+					try:
+						j = buys.pop(0)
+						if(self.all_tx[i].rec['date'] < self.all_tx[j].rec['date']):
+							print('{0:s} Ignore Sell:{1:%Y/%m/%d} {2:d} before Buy:{3:%Y/%m/%d} {4:d}'\
+								.format(c, self.all_tx[i].rec['date'], self.all_tx[i].rec['quantity'],\
+								self.all_tx[j].rec['date'], self.all_tx[j].rec['quantity']))
+							continue
+						buyqty = self.all_tx[j].rec['quantity']	
+						fifos[i].append(j)
+						if(buyqty > sellqty):
+							self.all_tx[j].rec['quantity'] = sellqty
+							self.all_tx[j].rec['company'] = c + '(PARTIAL)'							
+							new = copy.deepcopy(self.all_tx[j])
+							new.rec['quantity'] = buyqty - sellqty
+							self.all_tx.append(new)
+							buys.insert(0, self.all_tx.index(new))
+						sellqty -= buyqty
+					except IndexError:
+						print("no corresponding buy for sell(%s: %d)" % (c, sellqty))
+						break				
+		return self.__fifo_recs(fifos, fy, fields)
+
 def exporttocsv(filename, header, data):
 	with open(filename, 'w') as cs:
 		cswriter = csv.writer(cs)
 		cswriter.writerow(header)
 		cswriter.writerows(data)
 
-def main(dbFile, csvFile, fy, cw):
+def main(dbFile, csvFile, fy, cw, fifo):
 
-	db = sqldb(dbFile)	
+	db = sqlwrap.sqlwrap(dbFile)	
 	names = db.get_table_names() 
 	cols,rows = db.get_records(names[0])
 	#print(cols)
@@ -126,6 +141,8 @@ def main(dbFile, csvFile, fy, cw):
 	if cw == True:
 		data = tx.get_cw_data(fy, fields)
 		fields += fields
+	elif fifo == True:
+		data = tx.get_fifo_data(fy, fields)
 	else:
 		data = tx.get_fy_data(fy, fields)
 
@@ -138,16 +155,18 @@ def main(dbFile, csvFile, fy, cw):
 if __name__ == '__main__':
 
 	parser = argparse.ArgumentParser()
-	parser.add_argument('-i', '--dbpath', action='store', type=str, help="Database file path")
-	parser.add_argument('-o', '--csvpath', action='store', type=str, help=".csv file to output the info")
+	parser.add_argument('-i', '--dbpath', action='store', type=str, default='./test.db',  help="Database file path")
+	parser.add_argument('-o', '--csvpath', action='store', type=str, default='./out.csv', help=".csv file to output the info")
 	parser.add_argument('-y', '--fy', action='store', type=str, default='all',  help="get data pertaining to a particular FY")
 	parser.add_argument('-c', '--companywise', action='store_true', help="get company wise transactions")
+	parser.add_argument('-f', '--fifo', action='store_true', help="get first in first out sell transactions")
 	args = parser.parse_args()
 
-	dbPath = "./test.db" if args.dbpath == None else args.dbpath
-	csvPath = "./out.csv" if args.csvpath == None else args.csvpath
+	dbPath = args.dbpath
+	csvPath = args.csvpath
 	fy = args.fy
 	cw = args.companywise
+	fifo = args.fifo
 
-	main(dbPath, csvPath, fy, cw)
+	main(dbPath, csvPath, fy, cw, fifo)
 
