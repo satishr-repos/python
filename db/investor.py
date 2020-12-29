@@ -5,32 +5,45 @@ import argparse
 import sqlwrap
 from datetime import datetime 
 
+PAN = 'pan'
+STRATEGY = 'strategy'
+NAME = 'name'
+DATE = 'date'
+COMPANY = 'company'
+QUANTITY = 'quantity'
+TYPE = 'type'
+RATE = 'rate'
+BROKERAGE = 'brokerage'
+UNIT_PRICE = 'unitprice'
+TOTAL_PRICE = 'totalprice'
+
 class transaction:
 	def __init__(self, pan, strategy, name, company, trdate, quantity, rate, brokerage, unitprice, totalprice):
-		self.rec = dict() 
-		self.rec['pan'] = pan.strip()
-		self.rec['strategy'] = strategy.strip()
-		self.rec['name'] = name.strip()
-		self.rec['company'] = company.strip()
-		self.rec['date'] = datetime.strptime(trdate,'%m/%d/%y').date()
-		self.rec['quantity'] = int(quantity)
-		self.rec['type'] = 'BUY' if self.rec['quantity'] > 0 else 'SELL'
-		self.rec['rate'] = float(rate)
-		self.rec['brokerage'] = float(brokerage)
-		self.rec['unitprice'] = float(unitprice)
-		self.rec['totalprice'] = abs(float(totalprice))
+		self.rec = {PAN : pan.strip(), 
+					STRATEGY : strategy.strip(),
+					NAME : name.strip(),
+					COMPANY : company.strip(),
+					DATE : datetime.strptime(trdate, "%m/%d/%y").date(),
+					QUANTITY : int(quantity),
+					TYPE : 'BUY' if int(quantity) > 0 else 'SELL',
+					RATE : float(rate),
+					BROKERAGE : float(brokerage),
+					UNIT_PRICE : float(unitprice),
+					TOTAL_PRICE : abs(float(totalprice)) }
 
 	def is_fy(self, fyyear):
 		if(fyyear == 'all'):
 			return True
-		elif(self.rec['date'].year == int(fyyear) and self.rec['date'].month >= 4) or\
-			(self.rec['date'].year == (int(fyyear)+1) and self.rec['date'].month <= 3):	
+		
+		fy_apr = datetime(int(fyyear), 4, 1).date()
+		fy_mar = datetime(int(fyyear)+1, 3, 31).date()
+		if((self.rec[DATE] >= fy_apr) and (self.rec[DATE] <= fy_mar)):
 			return True
 		else:
 			return False
 	
 	def is_buy(self):
-		return True if self.rec['type'] == 'BUY' else False
+		return True if self.rec[TYPE] == 'BUY' else False
 
 class transactions:
 	def __init__(self):
@@ -39,7 +52,7 @@ class transactions:
 
 	def add(self, T):
 		self.all_tx.append(T)	
-		self.company_tx.setdefault(T.rec['company'], []).append(T)
+		self.company_tx.setdefault(T.rec[COMPANY], []).append(T)
 
 	def get_fy_data(self, fy, fields):
 		recs = []
@@ -51,7 +64,7 @@ class transactions:
 
 	def get_cw_data(self, fy, fields):
 		recs = []
-		empty = [''] * 6
+		empty = [''] * len(fields)
 		for c,lst in self.company_tx.items():
 			for t in lst:
 				b = empty.copy()
@@ -68,7 +81,7 @@ class transactions:
 
 	def __fifo_recs(self, fifos, fy, fields):
 		recs = []
-		empty = [''] * 6
+		empty = [''] * len(fields)
 		for i,lst in fifos.items():
 			s = [self.all_tx[i].rec[f] for f in fields if self.all_tx[i].is_fy(fy)]
 			if(len(s) == 0):
@@ -90,26 +103,26 @@ class transactions:
 			sells = [self.all_tx.index(t) for t in lst if not t.is_buy()]
 			for i in sells:
 				fifos.setdefault(i, [])
-				sellqty = abs(self.all_tx[i].rec['quantity'])
+				sellqty = abs(self.all_tx[i].rec[QUANTITY])
 				while(sellqty > 0):
 					try:
 						j = buys.pop(0)
-						if(self.all_tx[i].rec['date'] < self.all_tx[j].rec['date']):
+						if(self.all_tx[i].rec[DATE] < self.all_tx[j].rec[DATE]):
 							print('{0:s} Ignore Sell:{1:%Y/%m/%d} {2:d} before Buy:{3:%Y/%m/%d} {4:d}'\
-								.format(c, self.all_tx[i].rec['date'], self.all_tx[i].rec['quantity'],\
-								self.all_tx[j].rec['date'], self.all_tx[j].rec['quantity']))
+								.format(c, self.all_tx[i].rec[DATE], self.all_tx[i].rec[QUANTITY],\
+								self.all_tx[j].rec[DATE], self.all_tx[j].rec[QUANTITY]))
 							continue
-						buyqty = self.all_tx[j].rec['quantity']	
+						buyqty = self.all_tx[j].rec[QUANTITY]	
 						fifos[i].append(j)
 						if(buyqty > sellqty):
 							new = copy.deepcopy(self.all_tx[j])
-							unitprice = new.rec['totalprice'] / new.rec['quantity']
-							self.all_tx[j].rec['quantity'] = sellqty
-							self.all_tx[j].rec['company'] = c + '(PARTIAL)'							
-							self.all_tx[j].rec['totalprice'] = round(unitprice * sellqty,4)
-							new.rec['quantity'] = buyqty - sellqty
-							new.rec['company'] = c + '(PARTIAL)'
-							new.rec['totalprice'] = round(unitprice * new.rec['quantity'],4)
+							unitprice = new.rec[TOTAL_PRICE] / new.rec[QUANTITY]
+							self.all_tx[j].rec[QUANTITY] = sellqty
+							self.all_tx[j].rec[COMPANY] = c + ' (FIFO)'							
+							self.all_tx[j].rec[TOTAL_PRICE] = round(unitprice * sellqty,4)
+							new.rec[QUANTITY] = buyqty - sellqty
+							new.rec[COMPANY] = c + ' (FIFO)'
+							new.rec[TOTAL_PRICE] = round(unitprice * new.rec[QUANTITY],4)
 							self.all_tx.append(new)
 							buys.insert(0, self.all_tx.index(new))
 						sellqty -= buyqty
@@ -129,7 +142,6 @@ def main(dbFile, csvFile, fy, cw, fifo):
 	db = sqlwrap.sqlwrap(dbFile)	
 	names = db.get_table_names() 
 	cols,rows = db.get_records(names[0])
-	#print(cols)
 	
 	tx = transactions()
 	for row in rows:
@@ -138,10 +150,8 @@ def main(dbFile, csvFile, fy, cw, fifo):
 	
 	del db
 
-	fields=['date','company','quantity','type','unitprice', 'totalprice']
-	#fields = ['date', 'company', 'quantity', 'type', 'totalprice']
-	#fydata = tx.get_fy_data('2019', fields)
-	#print(fydata)
+	fields=[DATE,COMPANY,QUANTITY,TYPE,UNIT_PRICE, TOTAL_PRICE]
+	#fields = [PAN, STRATEGY, NAME, BROKERAGE, RATE]
 
 	if cw == True:
 		data = tx.get_cw_data(fy, fields)
